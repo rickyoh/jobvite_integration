@@ -1,0 +1,7 @@
+name = "Jobvite integration"
+description = "Job listing and description page generated from jobvite xml feed"
+package = Other
+core = 7.x
+
+dependencies[] = views
+dependencies[] = views_xml_backend

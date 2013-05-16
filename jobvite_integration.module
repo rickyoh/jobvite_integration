@@ -1,0 +1,135 @@
+<?php
+function jobvite_integration_menu() {
+  $items = array();
+
+  
+  $jobUrl = variable_get('jobvite_job_page_url');
+  $jobUrlParts = explode('/',$jobUrl);
+  $i = 0;
+  foreach($jobUrlParts as $jobUrlPart){
+	if($jobUrlPart = '%'){
+		$page_arguments =  $i;
+	}
+	$i++;
+  }
+  if($jobUrl){
+	  $items[$jobUrl] = array(
+		'title' => t('Careers'),
+		'page callback' => 'jobvite_integration_render_page',
+		'page arguments' => array($page_arguments),
+		'access arguments' => array('access content'),
+	  );
+  }
+   $items['admin/config/system/jobvite'] = array(
+    'title' => t('Jobvite Settings'),
+    'description' => t('Configure your Jobvite display page settings here.'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('jobvite_integration_admin_settings'),
+    'access arguments' => array('administer site configuration'),
+  );
+  return $items;
+}
+
+/**
+* Implementation of hook_views_api().
+*/
+function jobvite_integration_views_api() {
+  return array(
+    'api' => 3.0,
+    'path' => drupal_get_path('module', 'jobvite_integration') .'/includes'
+  );
+}
+
+function _jobvite_integration_get_categories_for_views(){
+	$jobCategories = array();
+	$xmlUrl = variable_get('jobvite_xml_feed');
+	$xml = simplexml_load_file($xmlUrl, 'SimpleXMLElement', LIBXML_NOCDATA);
+	foreach($xml->job as $job){
+		$job = (array) $job;
+		if(isset($job['category'])){
+			$jobCategories[$job['category']] = array(
+				'title' => $job['category'],
+				'operator' => '=',
+				'value' => $job['category'],
+			);
+		}
+	}
+	return array_values($jobCategories);
+}
+/*
+function jobvite_integration_views_pre_view(&$view, &$display_id, &$args) {
+ if ($view->name == 'jobvite_job_listing'){
+		$view_filters = $view->display_handler->get_option('filters');
+		$view_filters['text']['group_info']['group_items'] = _jobvite_integration_get_categories_for_views();
+		$view->display_handler->override_option('filters', $view_filters);
+	}
+}
+*/
+function jobvite_integration_admin_settings($form, &$form_state) {
+
+  $form['jobvite'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Jobvite Settings'),
+    '#collapsible' => False,
+    '#collapsed' => !isset($status) ? FALSE : $status === TRUE,
+  );
+  $form['jobvite']['jobvite_xml_feed'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Jobvite xml feed'),
+    '#required' => TRUE,
+    '#default_value' => variable_get('jobvite_xml_feed', ''),
+  );
+  
+  $form['jobvite']['jobvite_job_page_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Jobvite job page url'),
+	'#description' => t('The path in which your individual job description pages should render eg: "company/careers/%"'),
+    '#required' => TRUE,
+    '#default_value' => variable_get('jobvite_job_page_url', 'jobs/%'),
+  );  
+  
+  $form['jobvite']['jobvite_cache_expiration'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Set cache expiration'),
+    '#required' => TRUE,
+    '#default_value' => variable_get('jobvite_cache_expiration', '3600'),
+  );
+   $form['#submit'][] = 'jobvite_settings_system_settings_form_submit';
+  return system_settings_form($form);
+}
+
+function jobvite_settings_system_settings_form_submit($form, &$form_state) {
+	cache_clear_all();
+}
+
+
+function jobvite_integration_theme() {
+  return array(
+    'jobvite_careers_page' => array(
+      'variables' => array('title' => NULL),
+      'template' => 'templates/jobvite_careers_page',
+    ),
+  );
+}
+function jobvite_integration_render_page($jobId){
+	$cache = cache_get('jobvite-careers-id-'.$jobId);
+	$jobData = $cache->data;
+	if(!$jobData){
+		$xmlUrl = variable_get('jobvite_xml_feed');
+		$xml = simplexml_load_file($xmlUrl, 'SimpleXMLElement', LIBXML_NOCDATA);
+		foreach($xml->job as $job){
+		  if($job->id == $jobId){
+			$jobData = (array) $job;
+			cache_set('jobvite-careers-id-'.$jobId, $jobData, 'cache', 60*60);
+		  }
+		}
+	}
+	
+	if($jobData){
+		drupal_set_title(check_plain($jobData['title']));
+		return theme('jobvite_careers_page', array('job' => $jobData));
+	}else{
+		return t('Job not found!');
+	}
+	
+}
